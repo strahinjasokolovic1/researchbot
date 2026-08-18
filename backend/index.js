@@ -224,31 +224,6 @@ ${context}`;
     });
 }
 
-app.get('/paper-pdf', async (req, res) => {
-    try {
-        const target = new URL(req.query.url);
-        if (target.protocol !== 'https:' || ['localhost', '127.0.0.1', '::1'].includes(target.hostname)) {
-            return res.status(400).json({ error: 'Nevažeća PDF adresa.' });
-        }
-
-        const response = await axios.get(target.toString(), {
-            responseType: 'stream',
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36',
-                'Referer': `${target.origin}/`,
-                'Accept': 'application/pdf,application/octet-stream;q=0.9,*/*;q=0.8'
-            },
-            timeout: 30000
-        });
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Cache-Control', 'public, max-age=3600');
-        response.data.pipe(res);
-    } catch (error) {
-        console.error('PDF PROXY ERROR:', error.message);
-        res.status(502).json({ error: 'PDF nije moguće preuzeti sa izvornog sajta.' });
-    }
-});
-
 app.post('/ask', async (req, res) => {
     try {
         const { question } = req.body;

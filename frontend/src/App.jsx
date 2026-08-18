@@ -1,11 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import axios from 'axios';
-import { Document, Page, pdfjs } from 'react-pdf';
 import './App.css';
-import 'react-pdf/dist/Page/AnnotationLayer.css';
 
 const API_URL = 'http://localhost:5000';
-pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
 
 function PaperCard({ paper, onChat }) {
   const [flipped, setFlipped] = useState(false);
@@ -55,72 +52,10 @@ function Evidence({ quote }) {
   return <div className="evidence"><span>Pronađeno u radu</span><mark>{quote}</mark></div>;
 }
 
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function PaperPdfViewer({ pdfUrl, quote }) {
-  const [pageCount, setPageCount] = useState(0);
-  const [pageWidth, setPageWidth] = useState(720);
-  const [proxyFailed, setProxyFailed] = useState(false);
-
-  useEffect(() => {
-    const resize = () => setPageWidth(Math.min(720, Math.max(300, window.innerWidth < 850 ? window.innerWidth - 70 : window.innerWidth * 0.48)));
-    resize();
-    window.addEventListener('resize', resize);
-    return () => window.removeEventListener('resize', resize);
-  }, []);
-
-  const keywords = (quote || '')
-    .replace(/[^\p{L}\p{N}\s-]/gu, ' ')
-    .split(/\s+/)
-    .filter((word) => word.length > 3)
-    .slice(0, 12);
-  const highlightPattern = keywords.length
-    ? new RegExp(`(${keywords.map(escapeRegExp).join('|')})`, 'gi')
-    : null;
-
-  const highlightText = ({ str }) => highlightPattern ? str.replace(highlightPattern, '<mark>$1</mark>') : str;
-
-  if (proxyFailed) {
-    return (
-      <div className="pdf-fallback">
-        <div className="pdf-highlight-note">Izvorni sajt ne dozvoljava preuzimanje kroz PDF.js proxy. Otvaram PDF direktno u browseru.</div>
-        <iframe className="external-pdf-frame" title="PDF rada" src={pdfUrl} />
-      </div>
-    );
-  }
-
-  return (
-    <div className="pdf-scroll-area">
-      {quote && <div className="pdf-highlight-note">Žuto su označene ključne reči iz citata pronađenog u odgovoru.</div>}
-      <Document
-        file={`${API_URL}/paper-pdf?url=${encodeURIComponent(pdfUrl)}`}
-        onLoadSuccess={({ numPages }) => setPageCount(numPages)}
-        onLoadError={() => setProxyFailed(true)}
-        loading={<div className="pdf-loading">Učitavam PDF…</div>}
-        error={<div className="pdf-loading">PDF nije moguće učitati. Otvori izvorni link iz zaglavlja.</div>}
-      >
-        {Array.from({ length: pageCount }, (_, index) => (
-          <Page
-            key={`page-${index + 1}`}
-            pageNumber={index + 1}
-            width={pageWidth}
-            renderTextLayer
-            renderAnnotationLayer
-            customTextRenderer={highlightText}
-          />
-        ))}
-      </Document>
-    </div>
-  );
-}
-
 function PaperReader({ paper, language, onBack }) {
   const [question, setQuestion] = useState('');
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
-  const latestQuote = [...messages].reverse().find((message) => message.role === 'assistant' && message.quote)?.quote || '';
 
   const askAboutPaper = async (event) => {
     event.preventDefault();
@@ -169,7 +104,7 @@ function PaperReader({ paper, language, onBack }) {
         <section className="pdf-panel">
           <div className="panel-heading"><span className="pdf-icon">▤</span> Rad u PDF-u</div>
           {paper.pdfUrl ? (
-            <PaperPdfViewer pdfUrl={paper.pdfUrl} quote={latestQuote} />
+            <iframe className="native-pdf-frame" title={`PDF: ${paper.title}`} src={paper.pdfUrl} />
           ) : (
             <div className="abstract-reader"><div className="pdf-unavailable">Ovaj rad nema javno dostupan PDF preko OpenAlex-a. Prikazujem apstrakt.</div>{(paper.landingUrl || paper.url) && <a className="paper-source-link" href={paper.landingUrl || paper.url} target="_blank" rel="noreferrer">Otvori rad na izvornom sajtu ↗</a>}<p>{paper.fullText}</p></div>
           )}
