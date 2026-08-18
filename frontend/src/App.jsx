@@ -160,7 +160,7 @@ function PaperReader({ paper, language, onBack }) {
           {paper.pdfUrl ? (
             <PaperPdfViewer pdfUrl={paper.pdfUrl} quote={latestQuote} />
           ) : (
-            <div className="abstract-reader"><div className="pdf-unavailable">PDF nije pronađen. Prikazujem apstrakt.</div><p>{paper.fullText}</p></div>
+            <div className="abstract-reader"><div className="pdf-unavailable">Ovaj rad nema javno dostupan PDF preko OpenAlex-a. Prikazujem apstrakt.</div>{(paper.landingUrl || paper.url) && <a className="paper-source-link" href={paper.landingUrl || paper.url} target="_blank" rel="noreferrer">Otvori rad na izvornom sajtu ↗</a>}<p>{paper.fullText}</p></div>
           )}
         </section>
       </div>

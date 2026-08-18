@@ -80,6 +80,7 @@ button:disabled { cursor: wait; opacity: .65; }
 .pdf-loading { display: grid; min-height: 220px; place-items: center; color: #66736d; font-size: .85rem; }
 .abstract-reader { overflow: auto; padding: 30px; color: #3e4d48; line-height: 1.8; }
 .pdf-unavailable { margin-bottom: 20px; padding: 10px; color: #8a6a23; background: #fff4c7; border-radius: 8px; font-size: .82rem; }
+.paper-source-link { display: inline-block; margin-bottom: 18px; color: #1b8c7c; font-size: .84rem; font-weight: 800; }
 
 @media (max-width: 850px) {
   .cards-grid, .reader-grid { grid-template-columns: 1fr; }

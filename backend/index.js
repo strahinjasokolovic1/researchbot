@@ -134,11 +134,16 @@ UPIT: [Engleski naučni pojam]`;
 }
 
 function normalizeOpenAlexWork(work) {
+    const pdfUrl = work.primary_location?.pdf_url
+        || work.best_oa_location?.pdf_url
+        || work.locations?.find(location => location.pdf_url)?.pdf_url
+        || null;
     return {
         title: work.display_name,
         fullText: reconstructAbstract(work.abstract_inverted_index),
         url: work.doi || `https://openalex.org/${work.id}`,
-        pdfUrl: work.primary_location?.pdf_url || work.best_oa_location?.pdf_url || null,
+        pdfUrl,
+        landingUrl: work.primary_location?.landing_page_url || work.open_access?.oa_url || null,
         author: work.authorships?.map(a => a.author.display_name).join(', ') || 'Nepoznat autor',
         date: work.publication_date || 'Nepoznat datum',
         source: 'OpenAlex'
