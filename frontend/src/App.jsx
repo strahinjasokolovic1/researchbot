@@ -47,15 +47,21 @@ function CardFooter({ paper, copyText, onChat }) {
   );
 }
 
-function Evidence({ quote }) {
+function Evidence({ quote, onJump }) {
   if (!quote) return null;
-  return <div className="evidence"><span>Pronađeno u radu</span><mark>{quote}</mark></div>;
+  return <div className="evidence"><div className="evidence-heading"><span>Pronađeno u radu</span>{onJump && <button className="jump-button" onClick={onJump} title="Pronađi ovaj citat u radu">↗</button>}</div><mark>{quote}</mark></div>;
 }
 
 function PaperReader({ paper, language, onBack }) {
   const [question, setQuestion] = useState('');
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [pdfSource, setPdfSource] = useState(paper.pdfUrl);
+
+  const jumpToQuote = (quote) => {
+    const searchText = quote.replace(/\s+/g, ' ').trim().slice(0, 140);
+    setPdfSource(`${paper.pdfUrl}#search=${encodeURIComponent(searchText)}`);
+  };
 
   const askAboutPaper = async (event) => {
     event.preventDefault();
@@ -91,7 +97,7 @@ function PaperReader({ paper, language, onBack }) {
               <div className={`message ${message.role}`} key={`${message.role}-${index}`}>
                 <div className="message-label">{message.role === 'user' ? 'Ti' : 'Gemini'}</div>
                 <p>{message.text}</p>
-                {message.quote && <Evidence quote={message.quote} />}
+                {message.quote && <Evidence quote={message.quote} onJump={paper.pdfUrl ? () => jumpToQuote(message.quote) : null} />}
               </div>
             ))}
             {loading && <div className="message assistant"><div className="message-label">Gemini</div><p className="typing">Tražim odgovor u radu<span>…</span></p></div>}
@@ -104,7 +110,7 @@ function PaperReader({ paper, language, onBack }) {
         <section className="pdf-panel">
           <div className="panel-heading"><span className="pdf-icon">▤</span> Rad u PDF-u</div>
           {paper.pdfUrl ? (
-            <iframe className="native-pdf-frame" title={`PDF: ${paper.title}`} src={paper.pdfUrl} />
+            <iframe className="native-pdf-frame" title={`PDF: ${paper.title}`} src={pdfSource} />
           ) : (
             <div className="abstract-reader"><div className="pdf-unavailable">Ovaj rad nema javno dostupan PDF preko OpenAlex-a. Prikazujem apstrakt.</div>{(paper.landingUrl || paper.url) && <a className="paper-source-link" href={paper.landingUrl || paper.url} target="_blank" rel="noreferrer">Otvori rad na izvornom sajtu ↗</a>}<p>{paper.fullText}</p></div>
           )}

@@ -66,7 +66,10 @@ button:disabled { cursor: wait; opacity: .65; }
 .typing span { display: inline-block; animation: blink 1s infinite; }
 @keyframes blink { 50% { opacity: 0; } }
 .evidence { margin-top: 13px; padding: 9px; color: #574d1b; background: #fff6a8; border-left: 3px solid #e4c942; font: .78rem/1.5 Georgia, serif; }
-.evidence span { display: block; margin-bottom: 5px; color: #9a841d; font: 700 .62rem/1 system-ui, sans-serif; letter-spacing: .08em; text-transform: uppercase; }
+.evidence-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; }
+.evidence span { color: #9a841d; font: 700 .62rem/1 system-ui, sans-serif; letter-spacing: .08em; text-transform: uppercase; }
+.jump-button { display: grid; width: 25px; height: 25px; place-items: center; padding: 0; color: #705c08; background: #ffe66d; border: 1px solid #d8bd38; border-radius: 50%; font-size: 1rem; line-height: 1; }
+.jump-button:hover { color: #fff; background: #b99a16; }
 .evidence mark { padding: 0; color: inherit; background: transparent; }
 .chat-form { display: flex; gap: 9px; padding: 13px; border-top: 1px solid #e8ece8; }
 .chat-form input { min-width: 0; flex: 1; padding: 11px 12px; background: #f7f8f5; border: 1px solid #e1e6e1; border-radius: 9px; outline: 0; }
