@@ -85,7 +85,7 @@ function PaperPdfViewer({ pdfUrl, quote }) {
     <div className="pdf-scroll-area">
       {quote && <div className="pdf-highlight-note">Žuto su označene ključne reči iz citata pronađenog u odgovoru.</div>}
       <Document
-        file={pdfUrl}
+        file={`${API_URL}/paper-pdf?url=${encodeURIComponent(pdfUrl)}`}
         onLoadSuccess={({ numPages }) => setPageCount(numPages)}
         loading={<div className="pdf-loading">Učitavam PDF…</div>}
         error={<div className="pdf-loading">PDF nije moguće učitati. Otvori izvorni link iz zaglavlja.</div>}

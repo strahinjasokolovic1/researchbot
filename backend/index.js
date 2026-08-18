@@ -190,6 +190,8 @@ Pravila:
 - Nemoj automatski uzimati početak apstrakta. Preskoči uvod, cilj istraživanja, metodologiju i opšti kontekst ako ne objašnjavaju pojam.
 - Ako apstrakt sadrži definiciju, koristi nju. Ako nema formalnu definiciju, koristi najjasniji odlomak koji objašnjava šta je pojam, kako funkcioniše ili zašto je važan.
 - Ako je apstrakt kratak, citiraj najrelevantniji dostupan deo, čak i ako je kraći od celog pasusa.
+- Ako među ponuđenim radovima postoji relevantan arXiv rad, najmanje jedan od tri izabrana rada MORA biti sa arXiv-a.
+- Ako među ponuđenim radovima postoji relevantan OpenAlex rad, izaberi i njega; cilj je kombinacija izvora, a ne tri rada iz istog izvora.
 - URL mora biti preuzet iz podataka.
 - Ne dodaj markdown ni tekst izvan JSON-a.
 
@@ -211,6 +213,27 @@ ${context}`;
         };
     });
 }
+
+app.get('/paper-pdf', async (req, res) => {
+    try {
+        const target = new URL(req.query.url);
+        if (target.protocol !== 'https:' || ['localhost', '127.0.0.1', '::1'].includes(target.hostname)) {
+            return res.status(400).json({ error: 'Nevažeća PDF adresa.' });
+        }
+
+        const response = await axios.get(target.toString(), {
+            responseType: 'stream',
+            headers: { 'User-Agent': 'ResearchBot/1.0' },
+            timeout: 30000
+        });
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+        response.data.pipe(res);
+    } catch (error) {
+        console.error('PDF PROXY ERROR:', error.message);
+        res.status(502).json({ error: 'PDF nije moguće preuzeti sa izvornog sajta.' });
+    }
+});
 
 app.post('/ask', async (req, res) => {
     try {
