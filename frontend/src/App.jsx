@@ -1,11 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import axios from 'axios';
-import { Document, Page, pdfjs } from 'react-pdf';
 import './App.css';
-import 'react-pdf/dist/Page/AnnotationLayer.css';
 
 const API_URL = 'http://localhost:5000';
-pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
 
 function PaperCard({ paper, onChat }) {
   const [flipped, setFlipped] = useState(false);
@@ -50,80 +47,15 @@ function CardFooter({ paper, copyText, onChat }) {
   );
 }
 
-function Evidence({ quote, onJump }) {
+function Evidence({ quote }) {
   if (!quote) return null;
-  return <div className="evidence"><div className="evidence-heading"><span>Pronađeno u radu</span>{onJump && <button className="jump-button" onClick={onJump} title="Pronađi ovaj citat u radu">↗</button>}</div><mark>{quote}</mark></div>;
-}
-
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function PdfJsViewer({ pdfUrl, quote, focusRequest }) {
-  const [pageCount, setPageCount] = useState(0);
-  const [pageWidth, setPageWidth] = useState(720);
-  const [matchPage, setMatchPage] = useState(null);
-  const [matchedRequest, setMatchedRequest] = useState(null);
-  const [proxyFailed, setProxyFailed] = useState(false);
-  const pageRefs = useRef({});
-
-  useEffect(() => {
-    const resize = () => setPageWidth(Math.min(720, Math.max(300, window.innerWidth < 850 ? window.innerWidth - 70 : window.innerWidth * 0.48)));
-    resize();
-    window.addEventListener('resize', resize);
-    return () => window.removeEventListener('resize', resize);
-  }, []);
-
-  useEffect(() => {
-    if (matchedRequest === focusRequest && matchPage && pageRefs.current[matchPage]) {
-      pageRefs.current[matchPage].scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-  }, [focusRequest, matchedRequest, matchPage]);
-
-  const keywords = (quote || '').replace(/[^\p{L}\p{N}\s-]/gu, ' ').split(/\s+/).filter((word) => word.length > 3).slice(0, 12);
-  const highlightPattern = keywords.length ? new RegExp(`(${keywords.map(escapeRegExp).join('|')})`, 'gi') : null;
-  const highlightText = ({ str }) => highlightPattern ? str.replace(highlightPattern, '<mark>$1</mark>') : str;
-
-  const handleText = (pageNumber, textContent) => {
-    if ((matchedRequest === focusRequest && matchPage) || !keywords.length) return;
-    const items = Array.isArray(textContent) ? textContent : textContent.items || [];
-    const pageText = items.map((item) => item.str).join(' ').toLowerCase();
-    const matches = keywords.filter((word) => pageText.includes(word.toLowerCase())).length;
-    if (matches >= Math.min(2, keywords.length)) {
-      setMatchedRequest(focusRequest);
-      setMatchPage(pageNumber);
-    }
-  };
-
-  if (proxyFailed) {
-    return <div className="pdf-fallback"><div className="pdf-highlight-note">Ovaj izdavač ne dozvoljava preuzimanje PDF-a kroz aplikaciju. Otvaram native browser viewer.</div><iframe className="external-pdf-frame" title="PDF rada" src={pdfUrl} /></div>;
-  }
-
-  return (
-    <div className="pdf-scroll-area">
-      {quote && <div className="pdf-highlight-note">Strelica iz chata vodi na stranicu sa žutim highlightom.</div>}
-      <Document file={`${API_URL}/paper-pdf?url=${encodeURIComponent(pdfUrl)}`} onLoadSuccess={({ numPages }) => setPageCount(numPages)} onLoadError={() => setProxyFailed(true)} loading={<div className="pdf-loading">Učitavam PDF…</div>} error={<div className="pdf-loading">PDF nije moguće učitati.</div>}>
-        {Array.from({ length: pageCount }, (_, index) => {
-          const pageNumber = index + 1;
-          return <div className="pdf-page-wrap" ref={(element) => { pageRefs.current[pageNumber] = element; }} key={pageNumber}>
-            <Page pageNumber={pageNumber} width={pageWidth} renderTextLayer renderAnnotationLayer customTextRenderer={highlightText} onGetTextSuccess={(text) => handleText(pageNumber, text)} />
-          </div>;
-        })}
-      </Document>
-    </div>
-  );
+  return <div className="evidence"><div className="evidence-heading"><span>Pronađeno u radu</span></div><mark>{quote}</mark></div>;
 }
 
 function PaperReader({ paper, language, onBack }) {
   const [question, setQuestion] = useState('');
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [pdfFocus, setPdfFocus] = useState(0);
-  const latestQuote = [...messages].reverse().find((message) => message.role === 'assistant' && message.quote)?.quote || '';
-
-  const jumpToQuote = () => {
-    setPdfFocus((value) => value + 1);
-  };
 
   const askAboutPaper = async (event) => {
     event.preventDefault();
@@ -159,7 +91,7 @@ function PaperReader({ paper, language, onBack }) {
               <div className={`message ${message.role}`} key={`${message.role}-${index}`}>
                 <div className="message-label">{message.role === 'user' ? 'Ti' : 'Gemini'}</div>
                 <p>{message.text}</p>
-                {message.quote && <Evidence quote={message.quote} onJump={paper.pdfUrl ? () => jumpToQuote(message.quote) : null} />}
+                {message.quote && <Evidence quote={message.quote} />}
               </div>
             ))}
             {loading && <div className="message assistant"><div className="message-label">Gemini</div><p className="typing">Tražim odgovor u radu<span>…</span></p></div>}
@@ -172,7 +104,7 @@ function PaperReader({ paper, language, onBack }) {
         <section className="pdf-panel">
           <div className="panel-heading"><span className="pdf-icon">▤</span> Rad u PDF-u</div>
           {paper.pdfUrl ? (
-            <PdfJsViewer pdfUrl={paper.pdfUrl} quote={latestQuote} focusRequest={pdfFocus} />
+            <iframe className="native-pdf-frame" title={`PDF: ${paper.title}`} src={paper.pdfUrl} />
           ) : (
             <div className="abstract-reader"><div className="pdf-unavailable">Ovaj rad nema javno dostupan PDF preko OpenAlex-a. Prikazujem apstrakt.</div>{(paper.landingUrl || paper.url) && <a className="paper-source-link" href={paper.landingUrl || paper.url} target="_blank" rel="noreferrer">Otvori rad na izvornom sajtu ↗</a>}<p>{paper.fullText}</p></div>
           )}
@@ -222,14 +154,7 @@ function App() {
         </form>
         {error && <div className="error-box">{error}</div>}
       </header>
-
-      {papers.length > 0 && (
-        <section className="results-section">
-          <div className="results-heading"><div><span className="eyebrow">Odabrani izvori</span><h2>Tri rada za tvoje pitanje</h2></div><span className="result-count">{papers.length} izvora · klikni karticu za prevod</span></div>
-          <div className="cards-grid">{papers.map((paper, index) => <PaperCard key={`${paper.url}-${index}`} paper={paper} onChat={setSelectedPaper} />)}</div>
-        </section>
-      )}
-
+      {papers.length > 0 && <section className="results-section"><div className="results-heading"><div><span className="eyebrow">Odabrani izvori</span><h2>Tri rada za tvoje pitanje</h2></div><span className="result-count">{papers.length} izvora · klikni karticu za prevod</span></div><div className="cards-grid">{papers.map((paper, index) => <PaperCard key={`${paper.url}-${index}`} paper={paper} onChat={setSelectedPaper} />)}</div></section>}
       {papers.length === 0 && !loading && <div className="welcome-note"><span>✦</span><p>Rezultati će se pojaviti ovde. Svaka kartica sadrži originalni odlomak i prevod.</p></div>}
     </main>
   );
