@@ -91,7 +91,8 @@ async function searchArxiv(query) {
                 sortBy: 'relevance',
                 sortOrder: 'descending'
             },
-            headers: { 'User-Agent': 'ResearchBot/1.0' }
+            headers: { 'User-Agent': 'ResearchBot/1.0' },
+            timeout: 15000
         });
 
         return [...response.data.matchAll(/<entry>([\s\S]*?)<\/entry>/g)]
@@ -152,7 +153,8 @@ function normalizeOpenAlexWork(work) {
 
 async function findPapers(query) {
     const searchRes = await axios.get('https://api.openalex.org/works', {
-        params: { search: query, filter: 'has_abstract:true', per_page: 15 }
+        params: { search: query, filter: 'has_abstract:true', per_page: 15 },
+        timeout: 15000
     });
 
     const words = query.toLowerCase().split(/\s+/).filter(Boolean);
@@ -198,8 +200,16 @@ Pravila:
 PODACI:
 ${context}`;
 
-    const response = await callGemini(prompt, true);
-    const parsed = response && parseJsonResponse(response);
+    let response = await callGemini(prompt, true);
+    let parsed = response && parseJsonResponse(response);
+    const arxivAvailable = papers.some(paper => paper.source === 'arXiv');
+    const arxivSelected = parsed?.papers?.some(paper => papers.find(item => item.url === paper.url)?.source === 'arXiv');
+
+    if (arxivAvailable && !arxivSelected) {
+        response = await callGemini(`${prompt}\n\nVALIDACIJA: Prethodni izbor nije prihvatljiv. Ponovi JSON i obavezno uključi najmanje jedan URL iz rada čiji je IZVOR arXiv.`, true);
+        parsed = response && parseJsonResponse(response);
+    }
+
     if (!parsed?.papers?.length) return null;
 
     return parsed.papers.slice(0, 3).map((paper, index) => {
