@@ -71,7 +71,13 @@ button:disabled { cursor: wait; opacity: .65; }
 .chat-form { display: flex; gap: 9px; padding: 13px; border-top: 1px solid #e8ece8; }
 .chat-form input { min-width: 0; flex: 1; padding: 11px 12px; background: #f7f8f5; border: 1px solid #e1e6e1; border-radius: 9px; outline: 0; }
 .send-button { width: 42px; font-size: 1.2rem; }
-.pdf-panel iframe { width: 100%; height: 100%; flex: 1; border: 0; }
+.pdf-scroll-area { flex: 1; overflow: auto; padding: 14px; background: #dfe4df; }
+.pdf-scroll-area .react-pdf__Document { display: grid; justify-items: center; gap: 14px; }
+.pdf-scroll-area .react-pdf__Page { max-width: 100%; background: #fff; box-shadow: 0 4px 14px #273b3524; }
+.pdf-scroll-area .react-pdf__Page canvas { display: block; max-width: 100%; height: auto !important; }
+.pdf-scroll-area .react-pdf__Page__textContent mark { padding: 2px 0; color: inherit; background: #ffe66d; box-shadow: 0 0 0 1px #e5c32955; }
+.pdf-highlight-note { margin: 0 auto 12px; padding: 9px 12px; color: #705c08; background: #fff4ae; border: 1px solid #ecd66b; border-radius: 8px; font-size: .76rem; }
+.pdf-loading { display: grid; min-height: 220px; place-items: center; color: #66736d; font-size: .85rem; }
 .abstract-reader { overflow: auto; padding: 30px; color: #3e4d48; line-height: 1.8; }
 .pdf-unavailable { margin-bottom: 20px; padding: 10px; color: #8a6a23; background: #fff4c7; border-radius: 8px; font-size: .82rem; }
 
