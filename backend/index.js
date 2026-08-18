@@ -123,8 +123,9 @@ async function extractPdfText(pdfUrl) {
         const response = await axios.get(pdfUrl, {
             responseType: 'arraybuffer',
             headers: { 'User-Agent': 'ResearchBot/1.0' },
-            timeout: 30000,
-            maxContentLength: 30 * 1024 * 1024
+            timeout: 120000,
+            maxContentLength: 100 * 1024 * 1024,
+            maxBodyLength: 100 * 1024 * 1024
         });
         const parser = new PDFParse({ data: Buffer.from(response.data) });
         const result = await parser.getText();
@@ -272,6 +273,9 @@ app.post('/paper-chat', async (req, res) => {
 
         const fullPaperText = await extractPdfText(paper.pdfUrl);
         const sourceText = fullPaperText || paper.fullText;
+        const textForPrompt = sourceText.length > 100000
+            ? `${sourceText.slice(0, 60000)}\n\n[ SREDINA RADA JE SKRAĆENA ]\n\n${sourceText.slice(-40000)}`
+            : sourceText;
         const sourceLabel = fullPaperText ? 'punog teksta PDF-a' : 'apstrakta';
         const prompt = `Odgovori na pitanje korisnika ISKLJUČIVO na osnovu ${sourceLabel} rada ispod.
 Vrati samo validan JSON:
@@ -279,7 +283,7 @@ Vrati samo validan JSON:
 Ako odgovor nije moguće pronaći u radu, reci to jasno i kao quote vrati prazan string. Za pitanja o referencama, metodama ili rezultatima koristi relevantan deo punog teksta, ako je dostupan.
 
 NASLOV: ${paper.title}
-TEKST RADA: ${sourceText.slice(0, 50000)}
+TEKST RADA: ${textForPrompt}
 
 PITANJE: ${question}`;
 
