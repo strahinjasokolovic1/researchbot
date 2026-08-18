@@ -185,8 +185,11 @@ Vrati ISKLJUČIVO validan JSON sledećeg oblika:
 {"papers":[{"url":"URL iz podataka","title":"naslov","original":"doslovan pasus iz ABSTRAKTA na engleskom","translation":"tačan prevod pasusa na ${detectedLanguage}","explanation":"kratko stručno objašnjenje na ${detectedLanguage}"}]}
 Pravila:
 - Koristi samo tekst iz priloženih apstrakata.
-- Original mora biti doslovan citat; nemoj izmišljati tekst.
-- Ako je apstrakt kratak, citiraj najrelevantniji dostupan deo.
+- Original mora biti doslovan, uzastopan citat; nemoj izmišljati tekst niti spajati nepovezane rečenice.
+- Biraj pasus koji direktno definiše, objašnjava mehanizam ili jasno opisuje traženi pojam "${cleanQuery}".
+- Nemoj automatski uzimati početak apstrakta. Preskoči uvod, cilj istraživanja, metodologiju i opšti kontekst ako ne objašnjavaju pojam.
+- Ako apstrakt sadrži definiciju, koristi nju. Ako nema formalnu definiciju, koristi najjasniji odlomak koji objašnjava šta je pojam, kako funkcioniše ili zašto je važan.
+- Ako je apstrakt kratak, citiraj najrelevantniji dostupan deo, čak i ako je kraći od celog pasusa.
 - URL mora biti preuzet iz podataka.
 - Ne dodaj markdown ni tekst izvan JSON-a.
 
