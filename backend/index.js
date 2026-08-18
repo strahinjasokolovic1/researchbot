@@ -36,6 +36,50 @@ async function callGemini(prompt) {
     }
 }
 
+function decodeXml(value) {
+    return value
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&apos;/g, "'")
+        .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(code))
+        .replace(/&amp;/g, '&')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function readXmlTag(entry, tagName) {
+    const match = entry.match(new RegExp(`<${tagName}[^>]*>([\\s\\S]*?)</${tagName}>`));
+    return match ? decodeXml(match[1]) : '';
+}
+
+async function searchArxiv(query) {
+    try {
+        const response = await axios.get('https://export.arxiv.org/api/query', {
+            params: {
+                search_query: `all:"${query}"`,
+                start: 0,
+                max_results: 10,
+                sortBy: 'relevance',
+                sortOrder: 'descending'
+            },
+            headers: { 'User-Agent': 'ResearchBot/1.0' }
+        });
+
+        return [...response.data.matchAll(/<entry>([\s\S]*?)<\/entry>/g)].map(([, entry]) => ({
+            title: readXmlTag(entry, 'title'),
+            fullText: readXmlTag(entry, 'summary'),
+            url: readXmlTag(entry, 'id'),
+            author: [...entry.matchAll(/<author>[\s\S]*?<name>([\s\S]*?)<\/name>[\s\S]*?<\/author>/g)]
+                .map(([, name]) => decodeXml(name)).join(', ') || 'Nepoznat autor',
+            date: readXmlTag(entry, 'published').slice(0, 10) || 'Nepoznat datum'
+        })).filter(paper => paper.title && paper.fullText);
+    } catch (error) {
+        console.error('ARXIV API ERROR:', error.message);
+        return [];
+    }
+}
+
 app.post('/ask', async (req, res) => {
     try {
         const { question } = req.body;
@@ -58,7 +102,7 @@ app.post('/ask', async (req, res) => {
 
         console.log(`Pokušavam pretragu za: ${cleanQuery}`);
 
-        // 2. KORAK: Pretraga OpenAlex-a (Uzimamo top 15 rezultata)
+        // 2. KORAK: Pretraga OpenAlex-a i arXiv-a
         const searchRes = await axios.get('https://api.openalex.org/works', {
             params: {
                 'search': cleanQuery,
@@ -67,7 +111,7 @@ app.post('/ask', async (req, res) => {
             }
         });
 
-        const candidatePapers = searchRes.data.results
+        const openAlexPapers = searchRes.data.results
             .map(work => ({
                 title: work.display_name,
                 fullText: reconstructAbstract(work.abstract_inverted_index),
@@ -81,6 +125,11 @@ app.post('/ask', async (req, res) => {
                 return words.every(word => p.fullText.toLowerCase().includes(word));
             })
             .slice(0, 10); // Šaljemo AI-ju top 10 najboljih pogodaka
+
+        const arxivPapers = await searchArxiv(cleanQuery);
+        const candidatePapers = [...openAlexPapers.slice(0, 5), ...arxivPapers.slice(0, 5)]
+            .filter((paper, index, papers) => papers.findIndex(p => p.url === paper.url) === index)
+            .slice(0, 10);
 
         if (candidatePapers.length < 3) {
             // Ako je filter bio prestrog, probaj ponovo bez filtera reči samo sa top rezultatima
