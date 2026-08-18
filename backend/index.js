@@ -5,7 +5,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '2mb' }));
 
 function reconstructAbstract(invertedIndex) {
     if (!invertedIndex) return null;
@@ -15,33 +15,7 @@ function reconstructAbstract(invertedIndex) {
             positions.forEach(pos => words[pos] = word);
         }
         return words.join(' ').replace(/\s+/g, ' ').trim();
-    } catch (e) { return null; }
-}
-
-async function callGemini(prompt) {
-    const API_KEY = process.env.GEMINI_API_KEY;
-    if (!API_KEY) {
-        console.error("GEMINI_API_KEY is not configured");
-        return null;
-    }
-
-    try {
-        const genAI = new GoogleGenerativeAI(API_KEY);
-        const models = ['gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gemini-flash-lite-latest'];
-
-        for (const modelName of models) {
-            try {
-                const model = genAI.getGenerativeModel({ model: modelName });
-                const result = await model.generateContent(prompt);
-                return result.response.text();
-            } catch (err) {
-                console.error(`GEMINI MODEL ERROR (${modelName}):`, err.message);
-            }
-        }
-
-        return null;
-    } catch (err) {
-        console.error("GEMINI API ERROR:", err.response?.data || err.message);
+    } catch (error) {
         return null;
     }
 }
@@ -63,6 +37,50 @@ function readXmlTag(entry, tagName) {
     return match ? decodeXml(match[1]) : '';
 }
 
+function parseJsonResponse(text) {
+    try {
+        const cleaned = text.replace(/^```json\s*/i, '').replace(/\s*```$/, '').trim();
+        return JSON.parse(cleaned);
+    } catch (error) {
+        const start = text.indexOf('{');
+        const end = text.lastIndexOf('}');
+        if (start < 0 || end < start) return null;
+        try {
+            return JSON.parse(text.slice(start, end + 1));
+        } catch (nestedError) {
+            return null;
+        }
+    }
+}
+
+async function callGemini(prompt, jsonMode = false) {
+    const API_KEY = process.env.GEMINI_API_KEY;
+    if (!API_KEY) {
+        console.error('GEMINI_API_KEY is not configured');
+        return null;
+    }
+
+    const genAI = new GoogleGenerativeAI(API_KEY);
+    const models = ['gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gemini-flash-lite-latest'];
+
+    for (const modelName of models) {
+        try {
+            const model = genAI.getGenerativeModel({
+                model: modelName,
+                generationConfig: jsonMode
+                    ? { responseMimeType: 'application/json', temperature: 0.2 }
+                    : { temperature: 0.2 }
+            });
+            const result = await model.generateContent(prompt);
+            return result.response.text();
+        } catch (error) {
+            console.error(`GEMINI MODEL ERROR (${modelName}):`, error.message);
+        }
+    }
+
+    return null;
+}
+
 async function searchArxiv(query) {
     try {
         const response = await axios.get('https://export.arxiv.org/api/query', {
@@ -76,122 +94,160 @@ async function searchArxiv(query) {
             headers: { 'User-Agent': 'ResearchBot/1.0' }
         });
 
-        return [...response.data.matchAll(/<entry>([\s\S]*?)<\/entry>/g)].map(([, entry]) => ({
-            title: readXmlTag(entry, 'title'),
-            fullText: readXmlTag(entry, 'summary'),
-            url: readXmlTag(entry, 'id'),
-            author: [...entry.matchAll(/<author>[\s\S]*?<name>([\s\S]*?)<\/name>[\s\S]*?<\/author>/g)]
-                .map(([, name]) => decodeXml(name)).join(', ') || 'Nepoznat autor',
-            date: readXmlTag(entry, 'published').slice(0, 10) || 'Nepoznat datum'
-        })).filter(paper => paper.title && paper.fullText);
+        return [...response.data.matchAll(/<entry>([\s\S]*?)<\/entry>/g)]
+            .map(([, entry]) => {
+                const url = readXmlTag(entry, 'id');
+                return {
+                    title: readXmlTag(entry, 'title'),
+                    fullText: readXmlTag(entry, 'summary'),
+                    url,
+                    pdfUrl: url.replace('/abs/', '/pdf/') + '.pdf',
+                    author: [...entry.matchAll(/<author>[\s\S]*?<name>([\s\S]*?)<\/name>[\s\S]*?<\/author>/g)]
+                        .map(([, name]) => decodeXml(name)).join(', ') || 'Nepoznat autor',
+                    date: readXmlTag(entry, 'published').slice(0, 10) || 'Nepoznat datum',
+                    source: 'arXiv'
+                };
+            })
+            .filter(paper => paper.title && paper.fullText);
     } catch (error) {
         console.error('ARXIV API ERROR:', error.message);
         return [];
     }
 }
 
+async function extractQuestion(question) {
+    const prompt = `Korisnik pita: "${question}".
+Identifikuj glavni naučni pojam o kojem korisnik želi objašnjenje.
+Odgovori isključivo u formatu:
+DETEKTOVAN_JEZIK: [Ime jezika]
+SRZ_POJMA: [Pojam na jeziku korisnika]
+UPIT: [Engleski naučni pojam]`;
+
+    const extracted = await callGemini(prompt);
+    if (!extracted) return null;
+
+    return {
+        detectedLanguage: extracted.split('DETEKTOVAN_JEZIK:')[1]?.split('SRZ_POJMA:')[0]?.trim() || 'Srpski',
+        srzPojma: extracted.split('SRZ_POJMA:')[1]?.split('UPIT:')[0]?.trim() || question,
+        cleanQuery: extracted.split('UPIT:')[1]?.replace(/["']/g, '').trim() || question
+    };
+}
+
+function normalizeOpenAlexWork(work) {
+    return {
+        title: work.display_name,
+        fullText: reconstructAbstract(work.abstract_inverted_index),
+        url: work.doi || `https://openalex.org/${work.id}`,
+        pdfUrl: work.primary_location?.pdf_url || work.best_oa_location?.pdf_url || null,
+        author: work.authorships?.map(a => a.author.display_name).join(', ') || 'Nepoznat autor',
+        date: work.publication_date || 'Nepoznat datum',
+        source: 'OpenAlex'
+    };
+}
+
+async function findPapers(query) {
+    const searchRes = await axios.get('https://api.openalex.org/works', {
+        params: { search: query, filter: 'has_abstract:true', per_page: 15 }
+    });
+
+    const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+    const openAlexPapers = searchRes.data.results
+        .map(normalizeOpenAlexWork)
+        .filter(paper => paper.fullText && words.every(word => paper.fullText.toLowerCase().includes(word)))
+        .slice(0, 10);
+
+    const arxivPapers = await searchArxiv(query);
+    const selected = [...openAlexPapers.slice(0, 5), ...arxivPapers.slice(0, 5)]
+        .filter((paper, index, papers) => papers.findIndex(p => p.url === paper.url) === index)
+        .slice(0, 10);
+
+    if (selected.length >= 3) return selected;
+
+    return [...selected, ...searchRes.data.results
+        .map(normalizeOpenAlexWork)
+        .filter(paper => paper.fullText && !selected.some(item => item.url === paper.url))
+        .slice(0, 10 - selected.length)];
+}
+
+async function createPaperCards(papers, srzPojma, detectedLanguage, cleanQuery) {
+    const context = papers.map((paper, index) =>
+        `--- RAD ${index + 1} ---\nURL: ${paper.url}\nNASLOV: ${paper.title}\nAUTOR: ${paper.author}\nDATUM: ${paper.date}\nIZVOR: ${paper.source}\nABSTRAKT: ${paper.fullText}\n---`
+    ).join('\n\n');
+
+    const prompt = `Korisnik želi stručno objašnjenje pojma "${srzPojma}" na jeziku "${detectedLanguage}".
+Izaberi tačno 3 različita rada iz ponuđenih radova koji najbolje objašnjavaju pojam "${cleanQuery}".
+Vrati ISKLJUČIVO validan JSON sledećeg oblika:
+{"papers":[{"url":"URL iz podataka","title":"naslov","original":"doslovan pasus iz ABSTRAKTA na engleskom","translation":"tačan prevod pasusa na ${detectedLanguage}","explanation":"kratko stručno objašnjenje na ${detectedLanguage}"}]}
+Pravila:
+- Koristi samo tekst iz priloženih apstrakata.
+- Original mora biti doslovan citat; nemoj izmišljati tekst.
+- Ako je apstrakt kratak, citiraj najrelevantniji dostupan deo.
+- URL mora biti preuzet iz podataka.
+- Ne dodaj markdown ni tekst izvan JSON-a.
+
+PODACI:
+${context}`;
+
+    const response = await callGemini(prompt, true);
+    const parsed = response && parseJsonResponse(response);
+    if (!parsed?.papers?.length) return null;
+
+    return parsed.papers.slice(0, 3).map((paper, index) => {
+        const sourcePaper = papers.find(item => item.url === paper.url) || papers[index];
+        return {
+            ...sourcePaper,
+            title: paper.title || sourcePaper.title,
+            original: paper.original || sourcePaper.fullText,
+            translation: paper.translation || '',
+            explanation: paper.explanation || ''
+        };
+    });
+}
+
 app.post('/ask', async (req, res) => {
     try {
         const { question } = req.body;
+        if (!question?.trim()) return res.status(400).json({ error: 'Pitanje je obavezno.' });
 
-        // 1. KORAK: AI Ekstrakcija i prevod
-        const extractionPrompt = `Korisnik pita: "${question}". 
-        Identifikuj glavni naučni pojam (keyword) o kojem korisnik želi objašnjenje.
-        Odgovori isključivo u formatu:
-        DETEKTOVAN_JEZIK: [Ime jezika]
-        SRZ_POJMA: [Pojam na jeziku korisnika]
-        UPIT: [Engleski naučni pojam]`;
-        
-        const extracted = await callGemini(extractionPrompt);
-        if (!extracted) {
-            return res.status(503).json({ error: "Gemini API nije dostupan." });
-        }
-        const detectedLanguage = extracted.split("DETEKTOVAN_JEZIK:")[1]?.split("SRZ_POJMA:")[0]?.trim() || "Srpski";
-        const srzPojma = extracted.split("SRZ_POJMA:")[1]?.split("UPIT:")[0]?.trim();
-        const cleanQuery = extracted.split("UPIT:")[1]?.replace(/["']/g, "").trim();
+        const extracted = await extractQuestion(question);
+        if (!extracted) return res.status(503).json({ error: 'Gemini API nije dostupan.' });
 
-        console.log(`Pokušavam pretragu za: ${cleanQuery}`);
+        const papers = await findPapers(extracted.cleanQuery);
+        const cards = await createPaperCards(papers, extracted.srzPojma, extracted.detectedLanguage, extracted.cleanQuery);
+        if (!cards) return res.status(503).json({ error: 'Gemini nije mogao da formatira rezultate.' });
 
-        // 2. KORAK: Pretraga OpenAlex-a i arXiv-a
-        const searchRes = await axios.get('https://api.openalex.org/works', {
-            params: {
-                'search': cleanQuery,
-                'filter': 'has_abstract:true',
-                'per_page': 15 
-            }
-        });
-
-        const openAlexPapers = searchRes.data.results
-            .map(work => ({
-                title: work.display_name,
-                fullText: reconstructAbstract(work.abstract_inverted_index),
-                url: work.doi || `https://openalex.org/${work.id}`,
-                author: work.authorships?.map(a => a.author.display_name).join(', ') || 'Nepoznat autor',
-                date: work.publication_date || 'Nepoznat datum'
-            }))
-            .filter(p => {
-                if (!p.fullText) return false;
-                const words = cleanQuery.toLowerCase().split(' ');
-                return words.every(word => p.fullText.toLowerCase().includes(word));
-            })
-            .slice(0, 10); // Šaljemo AI-ju top 10 najboljih pogodaka
-
-        const arxivPapers = await searchArxiv(cleanQuery);
-        const candidatePapers = [...openAlexPapers.slice(0, 5), ...arxivPapers.slice(0, 5)]
-            .filter((paper, index, papers) => papers.findIndex(p => p.url === paper.url) === index)
-            .slice(0, 10);
-
-        if (candidatePapers.length < 3) {
-            // Ako je filter bio prestrog, probaj ponovo bez filtera reči samo sa top rezultatima
-             candidatePapers.push(...searchRes.data.results
-                .map(work => ({
-                    title: work.display_name,
-                    fullText: reconstructAbstract(work.abstract_inverted_index),
-                    url: work.doi || `https://openalex.org/${work.id}`,
-                    author: work.authorships?.map(a => a.author.display_name).join(', ') || 'Nepoznat autor',
-                    date: work.publication_date || 'Nepoznat datum'
-                })).filter(p => p.fullText).slice(0, 10));
-        }
-
-        const contextForAI = candidatePapers.map((p, i) => 
-            `--- RAD ${i+1} ---\nNASLOV: ${p.title}\nAUTOR: ${p.author}\nDATUM: ${p.date}\nTEKST: ${p.fullText}\nLINK: ${p.url}\n---`
-        ).join("\n\n");
-
-        // 3. KORAK: Finalni trodelni prompt (sada sa 6 tačaka)
-        const finalPrompt = `
-        Korisnik želi stručno objašnjenje za: "${srzPojma}" na jeziku "${detectedLanguage}".
-        
-        ZADATAK:
-        MORAŠ izabrati TAČNO 3 RAZLIČITA RADA iz ponuđenih 10 koji najbolje definišu pojam. 
-        Za SVAKI od ta 3 rada ispiši odgovor koristeći ovih 6 tačaka:
-
-        1. NASLOV: [Naslov rada]
-        2. IZVORNI PASUS: [Doslovan citat na engleskom od minimum 4-6 rečenica koji direktno objašnjava "${cleanQuery}"]
-        3. PREVOD: [Tačan prevod tog pasusa na ${detectedLanguage}]
-        4. OBJAŠNJENJE: [Stručno tumačenje tog pasusa na ${detectedLanguage}]
-        5. AUTOR: [Navedi autore iz podataka]
-        6. DATUM PUBLIKACIJE: [Navedi datum iz podataka]
-        7. LINK: [Navedi URL]
-
-        STRIKTNA PRAVILA:
-        - Odgovor MORA sadržati 3 odvojena rada.
-        - Izvorni pasus ne sme biti sumiran, mora biti doslovno prepisan.
-        - Koristi isključivo podatke iz TEKSTA koji je priložen.
-        
-        PODACI ZA ANALIZU:
-        ${contextForAI}
-        `;
-
-        const finalAnswer = await callGemini(finalPrompt);
-        if (!finalAnswer) {
-            return res.status(503).json({ error: "Gemini API nije dostupan." });
-        }
-        res.json({ answer: finalAnswer });
-
+        res.json({ papers: cards, language: extracted.detectedLanguage, query: extracted.cleanQuery });
     } catch (error) {
-        console.error("SERVER ERROR:", error.message);
-        res.status(500).json({ error: "Greška pri obradi zahteva." });
+        console.error('SERVER ERROR:', error.message);
+        res.status(500).json({ error: 'Greška pri obradi zahteva.' });
     }
 });
 
-app.listen(5000, () => console.log("Backend online - v2.1 Fixed Sort Error"));
+app.post('/paper-chat', async (req, res) => {
+    try {
+        const { paper, question, language = 'Srpski' } = req.body;
+        if (!paper?.fullText || !question?.trim()) {
+            return res.status(400).json({ error: 'Rad i pitanje su obavezni.' });
+        }
+
+        const prompt = `Odgovori na pitanje korisnika ISKLJUČIVO na osnovu apstrakta rada ispod.
+Vrati samo validan JSON:
+{"answer":"odgovor na jeziku ${language}","quote":"doslovan relevantan citat iz apstrakta na engleskom"}
+Ako odgovor nije moguće pronaći u radu, reci to jasno i kao quote vrati prazan string.
+
+NASLOV: ${paper.title}
+APSTRAKT: ${paper.fullText.slice(0, 16000)}
+
+PITANJE: ${question}`;
+
+        const response = await callGemini(prompt, true);
+        const result = response && parseJsonResponse(response);
+        if (!result) return res.status(503).json({ error: 'Gemini API nije dostupan.' });
+        res.json({ answer: result.answer || 'Odgovor nije pronađen u radu.', quote: result.quote || '' });
+    } catch (error) {
+        console.error('PAPER CHAT ERROR:', error.message);
+        res.status(500).json({ error: 'Greška pri razgovoru o radu.' });
+    }
+});
+
+app.listen(5000, () => console.log('Backend online - ResearchBot')); 
