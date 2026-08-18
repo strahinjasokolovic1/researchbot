@@ -2,6 +2,7 @@ const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { PDFParse } = require('pdf-parse');
 
 const app = express();
 app.use(cors());
@@ -113,6 +114,25 @@ async function searchArxiv(query) {
     } catch (error) {
         console.error('ARXIV API ERROR:', error.message);
         return [];
+    }
+}
+
+async function extractPdfText(pdfUrl) {
+    if (!pdfUrl) return null;
+    try {
+        const response = await axios.get(pdfUrl, {
+            responseType: 'arraybuffer',
+            headers: { 'User-Agent': 'ResearchBot/1.0' },
+            timeout: 30000,
+            maxContentLength: 30 * 1024 * 1024
+        });
+        const parser = new PDFParse({ data: Buffer.from(response.data) });
+        const result = await parser.getText();
+        await parser.destroy();
+        return result.text?.replace(/\s+/g, ' ').trim() || null;
+    } catch (error) {
+        console.error('PDF TEXT ERROR:', error.message);
+        return null;
     }
 }
 
@@ -250,13 +270,16 @@ app.post('/paper-chat', async (req, res) => {
             return res.status(400).json({ error: 'Rad i pitanje su obavezni.' });
         }
 
-        const prompt = `Odgovori na pitanje korisnika ISKLJUČIVO na osnovu apstrakta rada ispod.
+        const fullPaperText = await extractPdfText(paper.pdfUrl);
+        const sourceText = fullPaperText || paper.fullText;
+        const sourceLabel = fullPaperText ? 'punog teksta PDF-a' : 'apstrakta';
+        const prompt = `Odgovori na pitanje korisnika ISKLJUČIVO na osnovu ${sourceLabel} rada ispod.
 Vrati samo validan JSON:
-{"answer":"odgovor na jeziku ${language}","quote":"doslovan relevantan citat iz apstrakta na engleskom"}
-Ako odgovor nije moguće pronaći u radu, reci to jasno i kao quote vrati prazan string.
+{"answer":"odgovor na jeziku ${language}","quote":"doslovan relevantan citat na engleskom iz teksta rada"}
+Ako odgovor nije moguće pronaći u radu, reci to jasno i kao quote vrati prazan string. Za pitanja o referencama, metodama ili rezultatima koristi relevantan deo punog teksta, ako je dostupan.
 
 NASLOV: ${paper.title}
-APSTRAKT: ${paper.fullText.slice(0, 16000)}
+TEKST RADA: ${sourceText.slice(0, 50000)}
 
 PITANJE: ${question}`;
 
