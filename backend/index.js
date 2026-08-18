@@ -223,7 +223,11 @@ app.get('/paper-pdf', async (req, res) => {
 
         const response = await axios.get(target.toString(), {
             responseType: 'stream',
-            headers: { 'User-Agent': 'ResearchBot/1.0' },
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36',
+                'Referer': `${target.origin}/`,
+                'Accept': 'application/pdf,application/octet-stream;q=0.9,*/*;q=0.8'
+            },
             timeout: 30000
         });
         res.setHeader('Content-Type', 'application/pdf');

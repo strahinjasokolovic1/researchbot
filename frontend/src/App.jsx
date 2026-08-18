@@ -62,6 +62,7 @@ function escapeRegExp(value) {
 function PaperPdfViewer({ pdfUrl, quote }) {
   const [pageCount, setPageCount] = useState(0);
   const [pageWidth, setPageWidth] = useState(720);
+  const [proxyFailed, setProxyFailed] = useState(false);
 
   useEffect(() => {
     const resize = () => setPageWidth(Math.min(720, Math.max(300, window.innerWidth < 850 ? window.innerWidth - 70 : window.innerWidth * 0.48)));
@@ -81,12 +82,22 @@ function PaperPdfViewer({ pdfUrl, quote }) {
 
   const highlightText = ({ str }) => highlightPattern ? str.replace(highlightPattern, '<mark>$1</mark>') : str;
 
+  if (proxyFailed) {
+    return (
+      <div className="pdf-fallback">
+        <div className="pdf-highlight-note">Izvorni sajt ne dozvoljava preuzimanje kroz PDF.js proxy. Otvaram PDF direktno u browseru.</div>
+        <iframe className="external-pdf-frame" title="PDF rada" src={pdfUrl} />
+      </div>
+    );
+  }
+
   return (
     <div className="pdf-scroll-area">
       {quote && <div className="pdf-highlight-note">Žuto su označene ključne reči iz citata pronađenog u odgovoru.</div>}
       <Document
         file={`${API_URL}/paper-pdf?url=${encodeURIComponent(pdfUrl)}`}
         onLoadSuccess={({ numPages }) => setPageCount(numPages)}
+        onLoadError={() => setProxyFailed(true)}
         loading={<div className="pdf-loading">Učitavam PDF…</div>}
         error={<div className="pdf-loading">PDF nije moguće učitati. Otvori izvorni link iz zaglavlja.</div>}
       >
