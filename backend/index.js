@@ -1,6 +1,7 @@
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const app = express();
 app.use(cors());
@@ -17,30 +18,20 @@ function reconstructAbstract(invertedIndex) {
     } catch (e) { return null; }
 }
 
-async function callGroq(prompt) {
-    const API_KEY = process.env.GROQ_API_KEY;
+async function callGemini(prompt) {
+    const API_KEY = process.env.GEMINI_API_KEY;
     if (!API_KEY) {
-        console.error("GROQ_API_KEY is not configured");
+        console.error("GEMINI_API_KEY is not configured");
         return null;
     }
+
     try {
-        const response = await axios.post(
-            'https://api.groq.com/openai/v1/chat/completions',
-            {
-                model: "llama-3.3-70b-versatile",
-                messages: [{ role: "user", content: prompt }],
-                temperature: 0.1 
-            },
-            {
-                headers: {
-                    'Authorization': `Bearer ${API_KEY}`,
-                    'Content-Type': 'application/json'
-                }
-            }
-        );
-        return response.data.choices[0].message.content;
+        const genAI = new GoogleGenerativeAI(API_KEY);
+        const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+        const result = await model.generateContent(prompt);
+        return result.response.text();
     } catch (err) {
-        console.error("GROQ API ERROR:", err.response?.data || err.message);
+        console.error("GEMINI API ERROR:", err.response?.data || err.message);
         return null;
     }
 }
@@ -57,7 +48,10 @@ app.post('/ask', async (req, res) => {
         SRZ_POJMA: [Pojam na jeziku korisnika]
         UPIT: [Engleski naučni pojam]`;
         
-        const extracted = await callGroq(extractionPrompt);
+        const extracted = await callGemini(extractionPrompt);
+        if (!extracted) {
+            return res.status(503).json({ error: "Gemini API nije dostupan." });
+        }
         const detectedLanguage = extracted.split("DETEKTOVAN_JEZIK:")[1]?.split("SRZ_POJMA:")[0]?.trim() || "Srpski";
         const srzPojma = extracted.split("SRZ_POJMA:")[1]?.split("UPIT:")[0]?.trim();
         const cleanQuery = extracted.split("UPIT:")[1]?.replace(/["']/g, "").trim();
@@ -129,7 +123,10 @@ app.post('/ask', async (req, res) => {
         ${contextForAI}
         `;
 
-        const finalAnswer = await callGroq(finalPrompt);
+        const finalAnswer = await callGemini(finalPrompt);
+        if (!finalAnswer) {
+            return res.status(503).json({ error: "Gemini API nije dostupan." });
+        }
         res.json({ answer: finalAnswer });
 
     } catch (error) {
