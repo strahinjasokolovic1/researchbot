@@ -250,4 +250,4 @@ PITANJE: ${question}`;
     }
 });
 
-app.listen(5000, () => console.log('Backend online - ResearchBot')); 
+app.listen(5000, () => console.log('Backend online - ResearchBot'));
